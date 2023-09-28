@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import PotholeChart from '../components/PotholeChart';
 import supabase from '../config/supabase';
 
+
 const Dashboard = () => {
   const [potholesData, setPotholesData] = useState({
     severityData: [0, 0, 0, 0], // Initialize with zeros for each severity level
