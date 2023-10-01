@@ -1,103 +1,76 @@
 'use client'
-import React, { useEffect, useState, useRef } from 'react';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
+import React, { useEffect, useRef, useState } from 'react';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css'
 import supabase from '../config/supabase';
 
 const MapComponent = () => {
   const [potholes, setPotholes] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const mapContainerRef = useRef(null);
   const initialLatitude = 26.530389;
   const initialLongitude = -78.693342;
-  const initialZoomLevel = 13;
+  const initialZoomLevel = 12;
   const mapboxAccessToken = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
-  const [isLoading, setIsLoading] = useState(true);
-  const mapContainerRef = useRef(null); // Ref to the map container
-  const mapRef = useRef(null); // Ref to the map instance
 
   useEffect(() => {
-    async function fetchPotholes() {
+    async function fetchData() {
       try {
-        // Fetch pothole data from the 'potholes' table in Supabase
         const { data, error } = await supabase.from('potholes').select('*');
-
         if (error) {
           console.error('Error fetching potholes:', error.message);
         } else {
           console.log('Potholes fetched successfully:', data);
-
-          // Update potholes state with fetched data
           setPotholes(data);
         }
       } catch (error) {
         console.error('Error fetching potholes:', error.message);
       } finally {
-        // Set loading state to false when the data is fetched
         setIsLoading(false);
       }
     }
 
-    fetchPotholes();
-  }, []);
+    fetchData();
+  }, []); // Empty dependency array ensures this runs only on mount (client-side).
 
   useEffect(() => {
-    if (!isLoading && mapContainerRef.current && !mapRef.current) {
-      // Initialize the map when the component is mounted
-      const mapInstance = L.map(mapContainerRef.current).setView(
-        [initialLatitude, initialLongitude],
-        initialZoomLevel
-      );
+    // Check if window object exists (i.e., we are on the client-side)
+    if (typeof window !== 'undefined' && !isLoading && mapContainerRef.current) {
+      mapboxgl.accessToken = mapboxAccessToken;
+      const map = new mapboxgl.Map({
+        container: mapContainerRef.current,
+        style: 'mapbox://styles/mapbox/streets-v11',
+        center: [initialLongitude, initialLatitude],
+        zoom: initialZoomLevel,
+        attributionControl: false,
+        zoomControl: true,
+      });
 
-      // Add a tile layer from Mapbox using your access token
-      L.tileLayer(`https://api.mapbox.com/styles/v1/{id}/tiles/{z}/{x}/{y}?access_token=${mapboxAccessToken}`, {
-        attribution: '© <a href="https://www.mapbox.com/">Mapbox</a> contributors',
-        id: 'mapbox/streets-v11',
-        tileSize: 512,
-        zoomOffset: -1,
-        accessToken: mapboxAccessToken,
-      }).addTo(mapInstance);
-
-      // Set the map instance in refs
-      mapRef.current = mapInstance;
-    }
-  }, [initialLatitude, initialLongitude, initialZoomLevel, mapboxAccessToken, isLoading]);
-
-  useEffect(() => {
-    // Ensure the map is initialized and loading is complete before adding markers
-    if (mapRef.current && !isLoading) {
-      // Function to add a new marker for a pothole
-      const addPotholeMarker = (latitude, longitude, severity) => {
-        // Define colors for different severity levels
+      // Add markers for potholes
+      potholes.forEach((pothole) => {
+        const { latitude, longitude, severity } = pothole;
         const severityColors = {
           Low: 'green',
           Medium: 'yellow',
           High: 'red',
         };
 
-        // Create a custom icon with the specified color
-        const customIcon = L.divIcon({
-          className: 'custom-marker',
-          iconSize: [20, 20], // Adjust the marker size as needed
-          html: `<div class="marker" style="background-color: ${severityColors[severity]};"></div>`,
-        });
-
-        L.marker([latitude, longitude], { icon: customIcon })
-          .addTo(mapRef.current)
-          .bindPopup(`Severity: ${severity}`)
-          .openPopup(); // Automatically open the popup
-      };
-
-      // Render pothole markers (fetched and reported)
-      potholes.forEach((pothole) => {
-        addPotholeMarker(pothole.latitude, pothole.longitude, pothole.severity);
+        new mapboxgl.Marker({
+          color: severityColors[severity],
+        })
+          .setLngLat([longitude, latitude])
+          .setPopup(new mapboxgl.Popup().setText(`Severity: ${severity}`))
+          .addTo(map);
       });
-    }
-  }, [potholes, isLoading]);
 
-  return (
-    <div className='map-size'>
-      <div ref={mapContainerRef} style={{ height: '100%' }}></div>
-    </div>
-  );
+      // Clean up the map instance on component unmount
+      return () => {
+        map.remove();
+      };
+    }
+  }, [isLoading, initialLatitude, initialLongitude, initialZoomLevel, mapboxAccessToken, potholes]);
+
+  return <div className='map-size' ref={mapContainerRef}  />;
 };
 
 export default MapComponent;
